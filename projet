@@ -1,0 +1,341 @@
+import sqlite3
+import streamlit as st
+import pandas as pd
+from datetime import datetime
+
+# Configuration de la page Streamlit
+st.set_page_config(page_title="Gestion Hôtelière", layout="wide")
+st.title("🏨 Système de Gestion Hôtelière")
+
+# Fonction pour initialiser la base de données
+def init_database():
+    conn = sqlite3.connect('hotel.db')
+    cursor = conn.cursor()
+    
+    # Création des tables en un seul script
+    cursor.executescript("""
+    CREATE TABLE IF NOT EXISTS Hotel(
+        id_hotel INTEGER PRIMARY KEY,
+        ville TEXT,
+        pays TEXT,
+        codepostal INTEGER
+    );
+    
+    CREATE TABLE IF NOT EXISTS prestation(
+        prix REAL,
+        id_prestation INTEGER PRIMARY KEY,
+        description TEXT
+    );
+    
+    CREATE TABLE IF NOT EXISTS typechambre(
+        typee TEXT,
+        tarif REAL,
+        id_type INTEGER PRIMARY KEY
+    );
+    
+    CREATE TABLE IF NOT EXISTS chambre(
+        etage INTEGER,
+        fumeurs BOOLEAN,
+        numero INTEGER,
+        id_chambre INTEGER PRIMARY KEY,
+        id_type INTEGER,
+        id_hotel INTEGER,
+        FOREIGN KEY(id_type) REFERENCES typechambre(id_type),
+        FOREIGN KEY(id_hotel) REFERENCES Hotel(id_hotel)
+    );
+    
+    CREATE TABLE IF NOT EXISTS client(
+        adresse TEXT,
+        ville TEXT,
+        codepostal INTEGER,
+        email TEXT UNIQUE,
+        numtele TEXT,
+        nomcomplet TEXT PRIMARY KEY
+    );
+    
+    CREATE TABLE IF NOT EXISTS reservation(
+        datearrivee DATE,
+        datedepart DATE,
+        id_reservation INTEGER PRIMARY KEY,
+        nomcomplet TEXT,
+        FOREIGN KEY(nomcomplet) REFERENCES client(nomcomplet)
+    );
+    
+    CREATE TABLE IF NOT EXISTS evaluation(
+        datearrivee DATE,
+        lanote REAL,
+        textedescriptif TEXT,
+        id_evaluation INTEGER PRIMARY KEY,
+        nomcomplet TEXT,
+        id_hotel INTEGER,
+        FOREIGN KEY(id_hotel) REFERENCES Hotel(id_hotel),
+        FOREIGN KEY(nomcomplet) REFERENCES client(nomcomplet)
+    );
+    
+    CREATE TABLE IF NOT EXISTS concerner(
+        id_reservation INTEGER,
+        id_type INTEGER,
+        FOREIGN KEY(id_type) REFERENCES typechambre(id_type),
+        FOREIGN KEY(id_reservation) REFERENCES reservation(id_reservation),
+        PRIMARY KEY(id_type, id_reservation)
+    );
+    
+    CREATE TABLE IF NOT EXISTS offre(
+        id_hotel INTEGER,
+        id_prestation INTEGER,
+        FOREIGN KEY(id_hotel) REFERENCES Hotel(id_hotel),
+        FOREIGN KEY(id_prestation) REFERENCES prestation(id_prestation),
+        PRIMARY KEY(id_hotel, id_prestation)
+    );
+    """)
+    
+    # Insertion des données
+    cursor.executescript("""
+    -- Hôtels
+    INSERT OR IGNORE INTO Hotel VALUES (1, 'Paris', 'France', 75001);
+    INSERT OR IGNORE INTO Hotel VALUES (2, 'Lyon', 'France', 69002);
+    
+    -- Prestations
+    INSERT OR IGNORE INTO prestation VALUES (15, 1, 'Petit-déjeuner');
+    INSERT OR IGNORE INTO prestation VALUES (30, 2, 'Navette aéroport');
+    INSERT OR IGNORE INTO prestation VALUES (0, 3, 'Wi-Fi gratuit');
+    INSERT OR IGNORE INTO prestation VALUES (50, 4, 'Spa et bien-être');
+    INSERT OR IGNORE INTO prestation VALUES (20, 5, 'Parking sécurisé');
+    
+    -- Types de chambre
+    INSERT OR IGNORE INTO typechambre VALUES ('Simple', 80, 1);
+    INSERT OR IGNORE INTO typechambre VALUES ('Double', 120, 2);
+    
+    -- Chambres
+    INSERT OR IGNORE INTO chambre VALUES (2, 0, 201, 1, 1, 1);
+    INSERT OR IGNORE INTO chambre VALUES (5, 1, 502, 2, 1, 2);
+    INSERT OR IGNORE INTO chambre VALUES (3, 0, 305, 3, 2, 1);
+    INSERT OR IGNORE INTO chambre VALUES (4, 0, 410, 4, 2, 2);
+    INSERT OR IGNORE INTO chambre VALUES (1, 1, 104, 5, 2, 2);
+    INSERT OR IGNORE INTO chambre VALUES (2, 0, 202, 6, 1, 1);
+    INSERT OR IGNORE INTO chambre VALUES (3, 1, 307, 7, 1, 2);
+    INSERT OR IGNORE INTO chambre VALUES (1, 0, 101, 8, 1, 1);
+    
+    -- Clients (corrigé - virgules au lieu de points-virgules)
+    INSERT OR IGNORE INTO client VALUES 
+    ('12 Rue de Paris', 'Paris', 75001, 'jean.dupont@email.fr', '0612345678', 'Jean Dupont'),
+    ('5 Avenue Victor Hugo', 'Lyon', 69002, 'marie.leroy@email.fr', '0623456789', 'Marie Leroy'),
+    ('8 Boulevard Saint-Michel', 'Marseille', 13005, 'paul.moreau@email.fr', '0634567890', 'Paul Moreau'),
+    ('27 Rue Nationale', 'Lille', 59800, 'lucie.martin@email.fr', '0645678901', 'Lucie Martin'),
+    ('3 Rue des Fleurs', 'Nice', 06000, 'emma.giraud@email.fr', '0656789012', 'Emma Giraud');
+    
+    -- Réservations
+    INSERT OR IGNORE INTO reservation VALUES ('2025-06-15', '2025-06-18', 1, 'Jean Dupont');
+    INSERT OR IGNORE INTO reservation VALUES ('2025-07-01', '2025-07-05', 2, 'Marie Leroy');
+    INSERT OR IGNORE INTO reservation VALUES ('2025-11-12', '2025-11-14', 7, 'Marie Leroy');
+    INSERT OR IGNORE INTO reservation VALUES ('2026-02-01', '2026-02-05', 10, 'Marie Leroy');
+    INSERT OR IGNORE INTO reservation VALUES ('2025-08-10', '2025-08-14', 3, 'Paul Moreau');
+    INSERT OR IGNORE INTO reservation VALUES ('2025-09-05', '2025-09-07', 4, 'Lucie Martin');
+    INSERT OR IGNORE INTO reservation VALUES ('2026-01-15', '2026-01-18', 9, 'Lucie Martin');
+    INSERT OR IGNORE INTO reservation VALUES ('2025-09-20', '2025-09-25', 5, 'Emma Giraud');
+    
+    -- Evaluations
+    INSERT OR IGNORE INTO evaluation VALUES ('2025-06-15', 5, 'Excellent séjour, personnel très accueillant.', 1, 'Jean Dupont', 1);
+    INSERT OR IGNORE INTO evaluation VALUES ('2025-07-01', 4, 'Chambre propre, bon rapport qualité/prix.', 2, 'Marie Leroy', 2);
+    INSERT OR IGNORE INTO evaluation VALUES ('2025-08-10', 3, 'Séjour correct mais bruyant la nuit.', 3, 'Paul Moreau', 1);
+    INSERT OR IGNORE INTO evaluation VALUES ('2025-09-05', 5, 'Service impeccable, je recommande.', 4, 'Lucie Martin', 2);
+    INSERT OR IGNORE INTO evaluation VALUES ('2025-09-20', 4, 'Très bon petit-déjeuner, hôtel bien situé.', 5, 'Emma Giraud', 2);
+    
+    -- Relations concerner
+    INSERT OR IGNORE INTO concerner VALUES (1, 1);
+    INSERT OR IGNORE INTO concerner VALUES (2, 1);
+    INSERT OR IGNORE INTO concerner VALUES (3, 2);
+    INSERT OR IGNORE INTO concerner VALUES (4, 1);
+    INSERT OR IGNORE INTO concerner VALUES (5, 2);
+    INSERT OR IGNORE INTO concerner VALUES (7, 1);
+    INSERT OR IGNORE INTO concerner VALUES (9, 1);
+    INSERT OR IGNORE INTO concerner VALUES (10, 2);
+    
+    -- Relations offre
+    INSERT OR IGNORE INTO offre VALUES (1, 1);
+    INSERT OR IGNORE INTO offre VALUES (1, 3);
+    INSERT OR IGNORE INTO offre VALUES (1, 5);
+    INSERT OR IGNORE INTO offre VALUES (2, 1);
+    INSERT OR IGNORE INTO offre VALUES (2, 2);
+    INSERT OR IGNORE INTO offre VALUES (2, 3);
+    INSERT OR IGNORE INTO offre VALUES (2, 4);
+    """)
+    
+    conn.commit()
+    conn.close()
+
+# Initialisation de la base de données
+init_database()
+
+# Connexion à la base de données
+conn = sqlite3.connect('hotel.db')
+
+# Menu de navigation
+menu = st.sidebar.selectbox(
+    "Menu",
+    ["Accueil", "Réservations", "Clients", "Chambres Disponibles", "Ajouter Client", "Ajouter Réservation"]
+)
+
+# Fonctions utilitaires
+def get_reservations():
+    return pd.read_sql("""
+    SELECT r.id_reservation, r.nomcomplet, h.ville, r.datearrivee, r.datedepart, t.typee
+    FROM reservation r
+    JOIN client c ON c.nomcomplet = r.nomcomplet
+    JOIN concerner con ON con.id_reservation = r.id_reservation
+    JOIN typechambre t ON con.id_type = t.id_type
+    JOIN chambre ch ON t.id_type = ch.id_type
+    JOIN Hotel h ON h.id_hotel = ch.id_hotel
+    """, conn)
+
+def get_clients():
+    return pd.read_sql("SELECT * FROM client", conn)
+
+def get_available_rooms(start_date, end_date):
+    return pd.read_sql(f"""
+    SELECT c.numero, c.etage, t.typee, t.tarif, 
+           CASE WHEN c.fumeurs = 1 THEN 'Oui' ELSE 'Non' END AS fumeur,
+           h.ville
+    FROM chambre c
+    JOIN typechambre t ON c.id_type = t.id_type
+    JOIN Hotel h ON c.id_hotel = h.id_hotel
+    WHERE c.id_chambre NOT IN (
+        SELECT DISTINCT ch.id_chambre
+        FROM concerner co
+        JOIN chambre ch ON ch.id_type = co.id_type
+        JOIN reservation r ON co.id_reservation = r.id_reservation
+        WHERE r.datedepart >= '{start_date}' AND r.datearrivee <= '{end_date}'
+    )
+    """, conn)
+
+# Pages de l'application
+if menu == "Accueil":
+    st.header("Bienvenue dans le système de gestion hôtelière")
+    st.write("Utilisez le menu de gauche pour naviguer entre les différentes fonctionnalités.")
+    
+    # Statistiques
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Nombre de clients", conn.execute("SELECT COUNT(*) FROM client").fetchone()[0])
+    with col2:
+        st.metric("Nombre de chambres", conn.execute("SELECT COUNT(*) FROM chambre").fetchone()[0])
+    with col3:
+        st.metric("Réservations actives", conn.execute("SELECT COUNT(*) FROM reservation WHERE datedepart >= date('now')").fetchone()[0])
+
+elif menu == "Réservations":
+    st.header("📋 Liste des Réservations")
+    reservations = get_reservations()
+    st.dataframe(reservations)
+
+elif menu == "Clients":
+    st.header("👥 Liste des Clients")
+    clients = get_clients()
+    st.dataframe(clients)
+
+elif menu == "Chambres Disponibles":
+    st.header("🛏️ Chambres Disponibles")
+    col1, col2 = st.columns(2)
+    with col1:
+        start_date = st.date_input("Date d'arrivée", min_value=datetime.today())
+    with col2:
+        end_date = st.date_input("Date de départ", min_value=datetime.today())
+    
+    if st.button("Rechercher"):
+        if start_date >= end_date:
+            st.error("La date de départ doit être après la date d'arrivée")
+        else:
+            rooms = get_available_rooms(start_date, end_date)
+            if len(rooms) > 0:
+                st.dataframe(rooms)
+            else:
+                st.warning("Aucune chambre disponible pour cette période")
+
+elif menu == "Ajouter Client":
+    st.header("➕ Ajouter un Nouveau Client")
+    with st.form("client_form"):
+        nomcomplet = st.text_input("Nom complet*")
+        adresse = st.text_input("Adresse*")
+        ville = st.text_input("Ville*")
+        codepostal = st.number_input("Code postal*", min_value=0)
+        email = st.text_input("Email*")
+        numtele = st.text_input("Numéro de téléphone*")
+        
+        submitted = st.form_submit_button("Enregistrer")
+        if submitted:
+            if not all([nomcomplet, adresse, ville, email, numtele]):
+                st.error("Veuillez remplir tous les champs obligatoires (*)")
+            else:
+                try:
+                    conn.execute("""
+                    INSERT INTO client VALUES (?, ?, ?, ?, ?, ?)
+                    """, (adresse, ville, codepostal, email, numtele, nomcomplet))
+                    conn.commit()
+                    st.success("Client ajouté avec succès!")
+                except sqlite3.IntegrityError as e:
+                    if "UNIQUE constraint failed" in str(e):
+                        st.error("Un client avec ce nom ou cet email existe déjà")
+                    else:
+                        st.error(f"Erreur: {e}")
+
+elif menu == "Ajouter Réservation":
+    st.header("📅 Ajouter une Nouvelle Réservation")
+    clients = get_clients()
+    client_list = clients['nomcomplet'].tolist()
+    
+    with st.form("reservation_form"):
+        client = st.selectbox("Client*", client_list)
+        col1, col2 = st.columns(2)
+        with col1:
+            start_date = st.date_input("Date d'arrivée*", min_value=datetime.today())
+        with col2:
+            end_date = st.date_input("Date de départ*", min_value=datetime.today())
+        
+        if start_date <= end_date:
+            available_rooms = get_available_rooms(start_date, end_date)
+            room_list = [f"{row['numero']} - Étage {row['etage']} - {row['typee']} (${row['tarif']}) - {row['ville']}" 
+                        for _, row in available_rooms.iterrows()]
+            room = st.selectbox("Chambre disponible*", room_list)
+        else:
+            st.warning("La date de départ doit être après la date d'arrivée")
+        
+        submitted = st.form_submit_button("Réserver")
+        if submitted:
+            if not all([client, start_date, end_date, room]):
+                st.error("Veuillez remplir tous les champs obligatoires (*)")
+            elif start_date >= end_date:
+                st.error("La date de départ doit être après la date d'arrivée")
+            else:
+                try:
+                    # Trouver l'ID de la chambre sélectionnée
+                    room_num = int(room.split(" - ")[0])
+                    room_info = conn.execute("""
+                    SELECT c.id_chambre, c.id_type 
+                    FROM chambre c 
+                    WHERE c.numero = ?
+                    """, (room_num,)).fetchone()
+                    
+                    if room_info:
+                        room_id, room_type = room_info
+                        
+                        # Créer la réservation
+                        max_id = conn.execute("SELECT MAX(id_reservation) FROM reservation").fetchone()[0] or 0
+                        new_id = max_id + 1
+                        
+                        conn.execute("""
+                        INSERT INTO reservation VALUES (?, ?, ?, ?)
+                        """, (start_date, end_date, new_id, client))
+                        
+                        # Lier la réservation au type de chambre
+                        conn.execute("""
+                        INSERT INTO concerner VALUES (?, ?)
+                        """, (new_id, room_type))
+                        
+                        conn.commit()
+                        st.success("Réservation enregistrée avec succès!")
+                    else:
+                        st.error("Erreur: chambre introuvable")
+                except Exception as e:
+                    st.error(f"Erreur lors de la réservation: {e}")
+
+# Fermer la connexion
+conn.close()
